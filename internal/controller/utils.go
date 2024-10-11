@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	appsv1 "k8s.io/api/apps/v1"
 
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
@@ -82,4 +83,27 @@ func UpdateObjectMeta(obj *metav1.ObjectMeta, instance metav1.Object, labels map
 	obj.Name = instance.GetName()
 	obj.Namespace = instance.GetNamespace()
 	obj.Labels = labels
+}
+
+func compair(olddeploy *appsv1.Deployment, newdeploy *appsv1.Deployment) bool {
+	if !equality.Semantic.DeepEqual(newdeploy.Spec.Template.Spec.Volumes, olddeploy.Spec.Template.Spec.Volumes) {
+		return false
+	}
+	if !equality.Semantic.DeepEqual(newdeploy.Spec.Template.Spec.Containers[1].VolumeMounts, olddeploy.Spec.Template.Spec.Containers[1].VolumeMounts) {
+		return false
+	}
+	if !equality.Semantic.DeepEqual(newdeploy.Spec.Template.Spec.Containers[1].Args, olddeploy.Spec.Template.Spec.Containers[1].Args) {
+		return false
+	}
+
+	if !equality.Semantic.DeepEqual(newdeploy.Spec.Template.Spec.Containers[1].Env, olddeploy.Spec.Template.Spec.Containers[1].Env) {
+		return false
+	}
+	if !equality.Semantic.DeepEqual(newdeploy.Spec.Template.Spec.Containers[1].Ports, olddeploy.Spec.Template.Spec.Containers[1].Ports) {
+		return false
+	}
+	if !equality.Semantic.DeepEqual(newdeploy.Spec.Template.Spec.Containers[1].SecurityContext, olddeploy.Spec.Template.Spec.Containers[1].SecurityContext) {
+		return false
+	}
+	return true
 }

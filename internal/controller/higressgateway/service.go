@@ -16,7 +16,7 @@ const (
 func initService(svc *apiv1.Service, instance *v1alpha1.HigressGateway) *apiv1.Service {
 	*svc = apiv1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        HigressGatewayServiceName,
+			Name:        instance.Name,
 			Namespace:   instance.Namespace,
 			Labels:      instance.Labels,
 			Annotations: instance.Annotations,

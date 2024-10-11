@@ -2,6 +2,7 @@ package higresscontroller
 
 import (
 	"fmt"
+	"github.com/alibaba/higress/higress-operator/internal/controller"
 	"strconv"
 	"strings"
 
@@ -12,7 +13,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	operatorv1alpha1 "github.com/alibaba/higress/higress-operator/api/v1alpha1"
-	"github.com/alibaba/higress/higress-operator/internal/controller"
 )
 
 const (
@@ -21,72 +21,95 @@ const (
 )
 
 func initDeployment(deploy *appsv1.Deployment, instance *operatorv1alpha1.HigressController) *appsv1.Deployment {
-	*deploy = appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.Name,
-			Namespace: instance.Namespace,
-			Labels:    instance.Labels,
-		},
+	newdeploy := deploy.DeepCopyObject().(*appsv1.Deployment)
+	if newdeploy.Name == "" {
+		newdeploy = &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      instance.Name,
+				Namespace: instance.Namespace,
+				Labels:    instance.Labels,
+			},
+		}
 	}
 
-	updateDeploymentSpec(deploy, instance)
-	return deploy
+	updateDeploymentSpec(newdeploy, instance)
+	return newdeploy
 }
+
+func int32Ptr(i int32) *int32 { return &i }
 
 func updateDeploymentSpec(deploy *appsv1.Deployment, instance *operatorv1alpha1.HigressController) {
 	deploy.Spec.Selector = &metav1.LabelSelector{MatchLabels: instance.Spec.SelectorLabels}
-
-	deploy.Spec.Replicas = instance.Spec.Replicas
-
+	if instance.Spec.Replicas == nil {
+		deploy.Spec.Replicas = int32Ptr(1)
+	} else {
+		deploy.Spec.Replicas = instance.Spec.Replicas
+	}
+	deploy.Spec.ProgressDeadlineSeconds = int32Ptr(600)
+	deploy.Spec.RevisionHistoryLimit = int32Ptr(10)
 	controller.UpdateObjectMeta(&deploy.Spec.Template.ObjectMeta, instance, instance.Spec.SelectorLabels)
 
 	deploy.Spec.Template.Spec.ServiceAccountName = getServiceAccount(instance)
-
-	exist := false
+	deploy.Spec.Template.Spec.Volumes = genVolumes(instance)
+	controllerexist := false
+	pilotexist := false
+	containers := []apiv1.Container{}
 	for _, c := range deploy.Spec.Template.Spec.Containers {
 		if c.Name == genControllerName(instance) {
-			exist = true
-			break
+			controllerexist = true
+			container := c.DeepCopy()
+			container.Image = genImage(instance.Spec.Controller.Image.Repository, instance.Spec.Controller.Image.Tag)
+			container.Image = genImage(instance.Spec.Controller.Image.Repository, instance.Spec.Controller.Image.Tag)
+			container.Env = genControllerEnv(instance, c.Env)
+			container.Ports = genControllerPorts(instance)
+			container.Args = genControllerArgs(instance)
+			container.Resources = *instance.Spec.Controller.Resources
+			container.VolumeMounts = genControllerVolumeMounts(instance)
+			container.SecurityContext = genControllerSecurityContext(instance)
+			containers = append(containers, *container)
+		} else if c.Name == genPilotName(instance) {
+			pilotexist = true
+			container := c.DeepCopy()
+			container.Image = genImage(instance.Spec.Pilot.Image.Repository, instance.Spec.Pilot.Image.Tag)
+			container.Env = genPilotEnv(instance, c.Env)
+			container.Ports = genPilotPorts(instance)
+			container.Resources = *instance.Spec.Controller.Resources
+			container.Args = genPilotArgs(instance)
+			container.VolumeMounts = genPilotVolumeMounts(instance)
+			container.SecurityContext = genPilotSecurityContext(instance)
+			containers = append(containers, *container)
+		} else {
+			containers = append(containers, c)
 		}
 	}
-	if !exist {
-		deploy.Spec.Template.Spec.Containers = append(deploy.Spec.Template.Spec.Containers, apiv1.Container{
+	if !controllerexist {
+		containers = append(containers, apiv1.Container{
 			Name:            genControllerName(instance),
 			Image:           genImage(instance.Spec.Controller.Image.Repository, instance.Spec.Controller.Image.Tag),
 			ImagePullPolicy: instance.Spec.Controller.Image.ImagePullPolicy,
 			Args:            genControllerArgs(instance),
 			Ports:           genControllerPorts(instance),
+			Resources:       *instance.Spec.Controller.Resources,
 			SecurityContext: genControllerSecurityContext(instance),
-			Env:             genControllerEnv(instance),
+			Env:             genControllerEnv(instance, []apiv1.EnvVar{}),
 			VolumeMounts:    genControllerVolumeMounts(instance),
 		})
 	}
-
-	deploy.Spec.Template.Spec.Volumes = genVolumes(instance)
-
-	if !instance.Spec.EnableHigressIstio {
-		pilot := apiv1.Container{
+	if !pilotexist {
+		containers = append(containers, apiv1.Container{
 			Name:            genPilotName(instance),
 			Image:           genImage(instance.Spec.Pilot.Image.Repository, instance.Spec.Pilot.Image.Tag),
+			ImagePullPolicy: instance.Spec.Controller.Image.ImagePullPolicy,
 			Args:            genPilotArgs(instance),
+			Resources:       *instance.Spec.Pilot.Resources,
 			Ports:           genPilotPorts(instance),
 			SecurityContext: genPilotSecurityContext(instance),
-			Env:             genPilotEnv(instance),
-			ReadinessProbe:  genPilotProbe(instance),
+			Env:             genPilotEnv(instance, []apiv1.EnvVar{}),
 			VolumeMounts:    genPilotVolumeMounts(instance),
-		}
-
-		exist = false
-		for _, c := range deploy.Spec.Template.Spec.Containers {
-			if c.Name == genPilotName(instance) {
-				exist = true
-				break
-			}
-		}
-		if !exist {
-			deploy.Spec.Template.Spec.Containers = append(deploy.Spec.Template.Spec.Containers, pilot)
-		}
+		})
 	}
+
+	deploy.Spec.Template.Spec.Containers = containers
 }
 
 func muteDeployment(deploy *appsv1.Deployment, instance *operatorv1alpha1.HigressController) controllerutil.MutateFn {
@@ -127,9 +150,12 @@ func genPilotProbe(instance *operatorv1alpha1.HigressController) *apiv1.Probe {
 	}
 }
 
-func genPilotEnv(instance *operatorv1alpha1.HigressController) []apiv1.EnvVar {
+func genPilotEnv(instance *operatorv1alpha1.HigressController, oldEnvs []apiv1.EnvVar) []apiv1.EnvVar {
 	pilot := instance.Spec.Pilot
-
+	envMap := map[string]string{}
+	for _, e := range oldEnvs {
+		envMap[e.Name] = e.Value
+	}
 	envs := []apiv1.EnvVar{
 		{
 			Name:  "HIGRESS_CONTROLLER_SVC",
@@ -231,7 +257,12 @@ func genPilotEnv(instance *operatorv1alpha1.HigressController) []apiv1.EnvVar {
 		envs = append(envs, apiv1.EnvVar{Name: k, Value: v})
 	}
 
-	return envs
+	for _, e := range envs {
+		if envMap[e.Name] != e.Value {
+			return envs
+		}
+	}
+	return oldEnvs
 }
 
 func genPilotSecurityContext(instance *operatorv1alpha1.HigressController) *apiv1.SecurityContext {
@@ -356,8 +387,11 @@ func genControllerArgs(instance *operatorv1alpha1.HigressController) []string {
 	args = append(args, "serve")
 	args = append(args, fmt.Sprintf("--gatewaySelectorKey=higress"))
 	args = append(args, fmt.Sprintf("--gatewaySelectorValue=%v-%v", instance.Namespace, instance.Spec.Controller.GatewayName))
-	args = append(args, fmt.Sprintf("--ingressClass=%v", instance.Spec.Controller.IngressClass))
-
+	args = append(args, fmt.Sprintf("--ingressClass=%v", instance.Spec.IngressClass))
+	//args = append(args, fmt.Sprintf("--ingressClass=%v", "icks.io/"+instance.Spec.IngressClass))
+	if instance.Spec.Controller.LogLevel != "" {
+		args = append(args, fmt.Sprintf("--log_output_level=%v", instance.Spec.Controller.LogLevel))
+	}
 	if !instance.Spec.EnableStatus {
 		args = append(args, fmt.Sprintf("--enableStatus=%v", instance.Spec.EnableStatus))
 	}
@@ -375,7 +409,12 @@ func genControllerSecurityContext(instance *operatorv1alpha1.HigressController) 
 	return &apiv1.SecurityContext{}
 }
 
-func genControllerEnv(instance *operatorv1alpha1.HigressController) []apiv1.EnvVar {
+func genControllerEnv(instance *operatorv1alpha1.HigressController, oldEnvs []apiv1.EnvVar) []apiv1.EnvVar {
+
+	envMap := map[string]string{}
+	for _, e := range oldEnvs {
+		envMap[e.Name] = e.Value
+	}
 	envs := []apiv1.EnvVar{
 		{
 			Name: "POD_NAMESPACE",
@@ -399,7 +438,17 @@ func genControllerEnv(instance *operatorv1alpha1.HigressController) []apiv1.EnvV
 		envs = append(envs, apiv1.EnvVar{Name: k, Value: v})
 	}
 
-	return envs
+	for _, e := range envs {
+		if envMap[e.Name] != e.Value {
+			return envs
+		}
+		if e.Name == "POD_NAMESPACE" || e.Name == "POD_NAME" {
+			if _, ok := envMap[e.Name]; !ok {
+				return envs
+			}
+		}
+	}
+	return oldEnvs
 }
 
 func genControllerPorts(instance *operatorv1alpha1.HigressController) []apiv1.ContainerPort {
@@ -452,8 +501,8 @@ func genVolumes(instance *operatorv1alpha1.HigressController) []apiv1.Volume {
 			Name: "cacerts",
 			VolumeSource: apiv1.VolumeSource{
 				Secret: &apiv1.SecretVolumeSource{
-					SecretName: "cacerts",
-					Optional:   &optional,
+					SecretName:  "cacerts",
+					Optional:    &optional,
 					DefaultMode: &defaultMode,
 				},
 			},
@@ -462,8 +511,8 @@ func genVolumes(instance *operatorv1alpha1.HigressController) []apiv1.Volume {
 			Name: "istio-kubeconfig",
 			VolumeSource: apiv1.VolumeSource{
 				Secret: &apiv1.SecretVolumeSource{
-					SecretName: "istio-kubeconfig",
-					Optional:   &optional,
+					SecretName:  "istio-kubeconfig",
+					Optional:    &optional,
 					DefaultMode: &defaultMode,
 				},
 			},
@@ -476,8 +525,9 @@ func genVolumes(instance *operatorv1alpha1.HigressController) []apiv1.Volume {
 			VolumeSource: apiv1.VolumeSource{
 				ConfigMap: &apiv1.ConfigMapVolumeSource{
 					LocalObjectReference: apiv1.LocalObjectReference{
-						Name: controller.HigressGatewayConfig,
+						Name: "cm-" + instance.Name,
 					},
+					DefaultMode: int32Ptr(420),
 				},
 			},
 		})
@@ -498,6 +548,7 @@ func genVolumes(instance *operatorv1alpha1.HigressController) []apiv1.Volume {
 							},
 						},
 					},
+					DefaultMode: int32Ptr(420),
 				},
 			},
 		})

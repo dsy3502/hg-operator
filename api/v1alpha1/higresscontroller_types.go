@@ -23,9 +23,16 @@ import (
 // HigressControllerSpec defines the desired state of HigressController
 type HigressControllerSpec struct {
 	CRDCommonFields `json:",inline"`
-
-	Controller ControllerSpec `json:"controller"`
-	Pilot      PilotSpec      `json:"pilot"`
+	MeshConfig      MeshConfig    `json:"meshConfig"`
+	HigressConfig   HigressConfig `json:"higressConfig"`
+	// +kubebuilder:validation:Optional
+	MeshNetworks map[string]Network `json:"meshNetworks"`
+	IngressClass string             `json:"ingressClass"`
+	Scope        string             `json:"scope"`
+	Controller   ControllerSpec     `json:"controller"`
+	Pilot        PilotSpec          `json:"pilot"`
+	// +kubebuilder:validation:Optional
+	Console ConsoleSpec `json:"console"`
 }
 
 // HigressControllerStatus defines the observed state of HigressController
@@ -54,16 +61,25 @@ type HigressControllerList struct {
 	Items           []HigressController `json:"items"`
 }
 
+type ConsoleSpec struct {
+	// +kubebuilder:validation:Optional
+	Name     string `json:"name"`
+	Replicas *int32 `json:"replicas,omitempty"`
+	// +kubebuilder:validation:Optional
+	SelectorLabels map[string]string `json:"selectorLabels"`
+	// +kubebuilder:validation:Optional
+	Service *Service `json:"service"`
+	// +kubebuilder:validation:Optional
+	ConfigMapSpec         map[string]string `json:"configMapSpec"`
+	ContainerCommonFields `json:",inline"`
+}
 type ControllerSpec struct {
 	ContainerCommonFields `json:",inline"`
-
-	GatewayName  string `json:"gatewayName"`
-	IngressClass string `json:"ingressClass"`
+	GatewayName           string `json:"gatewayName"`
 	// +kubebuilder:validation:Optional
 	WatchNamespace string `json:"watchNamespace"`
 	SDSTokenAud    string `json:"sdsTokenAud"`
 }
-
 type PilotSpec struct {
 	ContainerCommonFields `json:",inline"`
 

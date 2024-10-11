@@ -1,28 +1,15 @@
-/*
-Copyright 2023.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package higresscontroller
 
 import (
 	"context"
 	"fmt"
-
+	operatorv1alpha1 "github.com/alibaba/higress/higress-operator/api/v1alpha1"
+	. "github.com/alibaba/higress/higress-operator/internal/controller"
+	"github.com/alibaba/higress/higress-operator/internal/controller/higressconsole"
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	apiv1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apixv1client "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -35,9 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	operatorv1alpha1 "github.com/alibaba/higress/higress-operator/api/v1alpha1"
-	. "github.com/alibaba/higress/higress-operator/internal/controller"
 )
 
 const (
@@ -51,80 +35,26 @@ type HigressControllerReconciler struct {
 	Config *rest.Config
 }
 
-//+kubebuilder:rbac:groups=operator.higress.io,resources=higresscontrollers,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=operator.higress.io,resources=higresscontrollers/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=operator.higress.io,resources=higresscontrollers/finalizers,verbs=update
+func (r *HigressControllerReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&operatorv1alpha1.HigressController{}).
+		Owns(&appsv1.Deployment{}).
+		Owns(&apiv1.Service{}).
+		Owns(&apiv1.ServiceAccount{}).
+		Owns(&networkingv1.IngressClass{}).
+		Complete(r)
+}
 
-//+kubebuilder:rbac:groups=apps,resources=deployments;replicasets,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups="",resources=pods;services;services/finalizers;endpoints;persistentvolumeclaims;events;configmaps;secrets;serviceaccounts;namespaces,verbs=create;update;get;list;watch;patch;delete
-//+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
-
-//+kubebuilder:rbac:groups="admissionregistration.k8s.io",resources=mutatingwebhookconfigurations,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups="admissionregistration.k8s.io",resources=validatingwebhookconfigurations,verbs=get;list;watch;update
-
-//+kubebuilder:rbac:groups="authentication.istio.io",resources=*,verbs=get;list;watch
-
-//+kubebuilder:rbac:groups="certificates.k8s.io",resources=certificatesigningrequests,verbs=update;create;get;delete;watch
-//+kubebuilder:rbac:groups="certificates.k8s.io",resources=certificatesigningrequests/approval,verbs=update;create;get;delete;watch
-//+kubebuilder:rbac:groups="certificates.k8s.io",resources=certificatesigningrequests/status,verbs=update;create;get;delete;watch
-//+kubebuilder:rbac:groups="certificates.k8s.io",resources=signers;resourceNames=certificatesigningrequests/status,verbs=update;create;get;delete;watch
-//+kubebuilder:rbac:groups="certificates.k8s.io",resources=signers;resourceNames=kubernetes.io/legacy-unknown,verbs=approve
-
-//+kubebuilder:rbac:groups="config.istio.io",resources=*,verbs=get;list;watch
-//+kubebuilder:rbac:groups="discovery.k8s.io",resources=endpointslices,verbs=get;list;watch
-
-//+kubebuilder:rbac:groups="extensions",resources=ingressclasses,verbs=get;list;watch
-//+kubebuilder:rbac:groups="extensions",resources=ingresses,verbs=get;list;watch
-//+kubebuilder:rbac:groups="extensions",resources=ingresses/status,verbs=*
-
-//+kubebuilder:rbac:groups="networking.k8s.io",resources=ingressclasses,verbs=get;list;watch
-//+kubebuilder:rbac:groups="networking.k8s.io",resources=ingresses,verbs=get;list;watch
-//+kubebuilder:rbac:groups="networking.k8s.io",resources=ingresses/status,verbs=*
-
-//+kubebuilder:rbac:groups="extensions.higress.io",resources=wasmplugins,verbs=get;create;watch;list;update;patch
-//+kubebuilder:rbac:groups="extensions.higress.io",resources=*,verbs=get;list;watch
-
-//+kubebuilder:rbac:groups="gateway.networking.k8s.io",resources=*,verbs=get;list;watch;update
-
-//+kubebuilder:rbac:groups="multicluster.x-k8s.io",resources=serviceexports,verbs=get;list;watch;update;create;delete
-//+kubebuilder:rbac:groups="multicluster.x-k8s.io",resources=serviceimports,verbs=get;watch;list
-
-//+kubebuilder:rbac:groups="networking.higress.io",resources=http2rpcs,verbs=get;create;watch;list;update;patch
-//+kubebuilder:rbac:groups="networking.higress.io",resources=mcpbridges,verbs=get;create;watch;list;update;patch
-
-//+kubebuilder:rbac:groups="networking.istio.io",resources=*,verbs=get;list;watch
-//+kubebuilder:rbac:groups="rbac.istio.io",resources=*,verbs=get;list;watch
-//+kubebuilder:rbac:groups="security.istio.io",resources=*,verbs=get;list;watch
-//+kubebuilder:rbac:groups="telemetry.istio.io",resources=*,verbs=get;list;watch
-//+kubebuilder:rbac:groups="extensions.istio.io",resources=*,verbs=get;list;watch
-//+kubebuilder:rbac:groups="networking.x-k8s.io",resources=*,verbs=get;list;watch;update
-
-//+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=list;watch;get
-//+kubebuilder:rbac:groups=networking.k8s.io,resources=ingressclasses,verbs=get;create;delete
-//+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses/status,verbs=update
-//+kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;create;delete;update;watch;list
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings;roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
-
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the HigressController object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.14.4/pkg/reconcile
-func (r *HigressControllerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *HigressControllerReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-
 	instance := &operatorv1alpha1.HigressController{}
-	if err := r.Get(ctx, req.NamespacedName, instance); err != nil {
+	if err := r.Get(ctx, request.NamespacedName, instance); err != nil {
 		if errors.IsNotFound(err) {
-			logger.Info(fmt.Sprintf("HigressController(%v) resource not found. Ignoring since object must be deleted", req.NamespacedName))
+			logger.Info(fmt.Sprintf("HigressController(%v) resource not found. Ignoring since object must be deleted", request.NamespacedName))
 			return ctrl.Result{}, nil
 		}
 
-		logger.Error(err, fmt.Sprintf("Failed to get resource HigressController(%v)", req.NamespacedName))
+		logger.Error(err, fmt.Sprintf("Failed to get resource HigressController(%v)", request.NamespacedName))
 		return ctrl.Result{}, err
 	}
 
@@ -179,12 +109,17 @@ func (r *HigressControllerReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		logger.Error(err, "Failed to create rbac")
 		return ctrl.Result{}, err
 	}
-
+	if err = r.createConfigMap(ctx, instance, logger); err != nil {
+		return ctrl.Result{}, err
+	}
 	if err = r.createDeployment(ctx, instance, logger); err != nil {
 		logger.Error(err, "Failed to create deployment")
 		return ctrl.Result{}, err
 	}
-
+	if err = r.createIngressClass(ctx, instance, logger); err != nil {
+		logger.Error(err, "Failed to create ingressclass")
+		return ctrl.Result{}, err
+	}
 	if err = r.createService(ctx, instance, logger); err != nil {
 		logger.Error(err, "Failed to create service")
 		return ctrl.Result{}, err
@@ -197,18 +132,37 @@ func (r *HigressControllerReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 	}
+	//todo 创建console
+	if instance.Spec.Console.Name != "" {
+		if err = r.addOrUpdateConsole(ctx, instance, logger); err != nil {
 
+			logger.Error(err, "Failed to create console")
+			return ctrl.Result{}, err
+		}
+	}
 	return ctrl.Result{}, nil
 }
+func (r *HigressControllerReconciler) addOrUpdateConsole(ctx context.Context, instance *operatorv1alpha1.HigressController, logger logr.Logger) error {
+	console := higressconsole.HigressConsole{
+		Client: r.Client,
+		Scheme: r.Scheme,
+	}
+	if err := console.Reconcile(ctx, instance); err != nil {
+		return err
+	}
+	return nil
+}
 
-// SetupWithManager sets up the controller with the Manager.
-func (r *HigressControllerReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&operatorv1alpha1.HigressController{}).
-		Owns(&appsv1.Deployment{}).
-		Owns(&apiv1.Service{}).
-		Owns(&apiv1.ServiceAccount{}).
-		Complete(r)
+func (r *HigressControllerReconciler) createConfigMap(ctx context.Context, instance *operatorv1alpha1.HigressController, logger logr.Logger) error {
+	gatewayConfigMap, err := initGatewayConfigMap(&apiv1.ConfigMap{}, instance)
+	if err != nil {
+		return err
+	}
+	if err = CreateOrUpdate(ctx, r.Client, "gatewayConfigMap", gatewayConfigMap,
+		muteConfigMap(gatewayConfigMap, instance, updateGatewayConfigMapSpec), logger); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *HigressControllerReconciler) createServiceAccount(ctx context.Context, instance *operatorv1alpha1.HigressController, logger logr.Logger) error {
@@ -280,12 +234,44 @@ func (r *HigressControllerReconciler) createRBAC(ctx context.Context, instance *
 	return nil
 }
 
+func (r *HigressControllerReconciler) createIngressClass(ctx context.Context, instance *operatorv1alpha1.HigressController, logger logr.Logger) error {
+	ic := &networkingv1.IngressClass{}
+	if err := r.Get(ctx, types.NamespacedName{Name: instance.Spec.IngressClass, Namespace: instance.Namespace}, ic); err != nil {
+		if errors.IsNotFound(err) {
+			ingressclass, err := initIngressclass(&networkingv1.IngressClass{}, instance)
+			if err != nil {
+				return err
+			}
+			if err = ctrl.SetControllerReference(instance, ingressclass, r.Scheme); err != nil {
+				return err
+			}
+
+			return CreateOrUpdate(ctx, r.Client, "IngressClass", ingressclass, muteIngressclass(ingressclass, instance), logger)
+		}
+	}
+	return nil
+}
+
 func (r *HigressControllerReconciler) createDeployment(ctx context.Context, instance *operatorv1alpha1.HigressController, logger logr.Logger) error {
-	deploy := initDeployment(&appsv1.Deployment{}, instance)
+
+	olddeploy := &appsv1.Deployment{}
+	//deploy := initDeployment(&appsv1.Deployment{}, instance)
+	err := r.Get(ctx, types.NamespacedName{Name: instance.Spec.Controller.Name, Namespace: instance.Namespace}, olddeploy)
+	if errors.IsNotFound(err) {
+		deploy := initDeployment(&appsv1.Deployment{}, instance)
+		if err := ctrl.SetControllerReference(instance, deploy, r.Scheme); err != nil {
+			return err
+		}
+		return CreateOrUpdate(ctx, r.Client, "Deployment", deploy, muteDeployment(deploy, instance), logger)
+	}
+	deploy := initDeployment(olddeploy, instance)
+	if equality.Semantic.DeepEqual(deploy.Spec, olddeploy.Spec) {
+		return nil
+	}
+
 	if err := ctrl.SetControllerReference(instance, deploy, r.Scheme); err != nil {
 		return err
 	}
-
 	return CreateOrUpdate(ctx, r.Client, "Deployment", deploy, muteDeployment(deploy, instance), logger)
 }
 
@@ -309,7 +295,7 @@ func (r *HigressControllerReconciler) finalizeHigressController(instance *operat
 	)
 
 	name := getServiceAccount(instance)
-	nn := types.NamespacedName{Name: name, Namespace: apiv1.NamespaceAll}
+	nn := types.NamespacedName{Name: instance.Namespace + "-" + name, Namespace: apiv1.NamespaceAll}
 	if err := r.Get(ctx, nn, crb); err != nil {
 		return err
 	}
@@ -364,12 +350,12 @@ func (r *HigressControllerReconciler) setDefaultValues(instance *operatorv1alpha
 	}
 	// serviceAccount
 	if instance.Spec.ServiceAccount == nil {
-		instance.Spec.ServiceAccount = &operatorv1alpha1.ServiceAccount{Enable: true, Name: "higress-controller"}
+		instance.Spec.ServiceAccount = &operatorv1alpha1.ServiceAccount{Enable: true, Name: instance.Name}
 	}
 	// SelectorLabels
 	if len(instance.Spec.SelectorLabels) == 0 {
 		instance.Spec.SelectorLabels = map[string]string{
-			"app": "higress-controller",
+			"app": instance.Spec.Controller.Name,
 		}
 	}
 }

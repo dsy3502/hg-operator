@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build conformance
 // +build conformance
 
 package test
@@ -25,10 +26,6 @@ import (
 	v1 "k8s.io/api/networking/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
-
-	"github.com/alibaba/higress/test/e2e/conformance/tests"
-	"github.com/alibaba/higress/test/e2e/conformance/utils/flags"
-	"github.com/alibaba/higress/test/e2e/conformance/utils/suite"
 )
 
 var isWasmPluginTest = flag.Bool("isWasmPluginTest", false, "")

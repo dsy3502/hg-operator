@@ -15,7 +15,7 @@ const (
 func initService(svc *apiv1.Service, instance *operatorv1alpha1.HigressController) *apiv1.Service {
 	*svc = apiv1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      HigressControllerServiceName,
+			Name:      instance.Name,
 			Namespace: instance.Namespace,
 			Labels:    instance.Labels,
 		},
@@ -34,13 +34,18 @@ func updateServiceSpec(svc *apiv1.Service, instance *operatorv1alpha1.HigressCon
 		}
 		svc.Spec.Ports = s.Ports
 	}
-
+	svc.Spec.Type = apiv1.ServiceTypeNodePort
 	if !instance.Spec.EnableHigressIstio {
 		ports := []apiv1.ServicePort{
 			{
 				Name:     "grpc-xds",
 				Protocol: apiv1.ProtocolTCP,
 				Port:     15010,
+			},
+			{
+				Name:     "http-service",
+				Protocol: apiv1.ProtocolTCP,
+				Port:     8888,
 			},
 			{
 				Name:     "https-dns",

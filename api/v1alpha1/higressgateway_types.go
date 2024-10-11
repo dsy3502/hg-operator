@@ -96,6 +96,22 @@ type MeshConfig struct {
 	RootNamespace string `json:"rootNamespace" yaml:"rootNamespace"`
 }
 
+type HigressConfig struct {
+	AddXRealIpHeader                 bool    `json:"addXRealIpHeader" yaml:"addXRealIpHeader"`
+	DisableXEnvoyHeaders             bool    `json:"disableXEnvoyHeaders" yaml:"disableXEnvoyHeaders"`
+	DownstreamConnectionBufferLimits uint32  `json:"downstreamConnectionBufferLimits" yaml:"downstreamConnectionBufferLimits"`
+	DownstreamIdleTimeout            uint32  `json:"downstreamIdleTimeout" yaml:"downstreamIdleTimeout"`
+	UpstreamIdleTimeout              uint32  `json:"upstreamIdleTimeout" yaml:"upstreamIdleTimeout"`
+	UpstreamConnectionBufferLimits   uint32  `json:"upstreamConnectionBufferLimits" yaml:"upstreamConnectionBufferLimits"`
+	Gzip                             bool    `json:"gzip" yaml:"gzip"`
+	EnableHttp2                      bool    `json:"enableHttp2" yaml:"enableHttp2"`
+	XffTrustedNum                    uint32  `json:"xffTrustedNum" yaml:"xffTrustedNum"`
+	TracingEnable                    bool    `json:"tracingEnable" yaml:"tracingEnable"`
+	TracingSampling                  float64 `json:"tracingSampling" yaml:"tracingSampling"`
+	SkywalkingAddr                   string  `json:"skywalkingAddr" yaml:"skywalkingAddr"`
+	SkywalkingPort                   uint32  `json:"skywalkingPort" yaml:"skywalkingPort"`
+}
+
 type Network struct {
 	Endpoints []Endpoint `json:"endpoints"`
 	Gateways  []Gateway  `json:"gateways"`

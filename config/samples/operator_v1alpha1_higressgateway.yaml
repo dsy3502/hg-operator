@@ -13,6 +13,8 @@ spec:
   enableStatus: true
   local: true
   jwtPolicy: "third-party-jwt"
+  service:
+    type: LoadBalancer
   image:
     repository: "higress-registry.cn-hangzhou.cr.aliyuncs.com/higress/gateway"
     tag: "1.1.0"

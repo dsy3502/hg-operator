@@ -11,7 +11,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/alibaba/higress/higress-operator/api/v1alpha1"
-	"github.com/alibaba/higress/higress-operator/internal/controller"
 )
 
 const (
@@ -75,7 +74,7 @@ func updateDeploymentSpec(deploy *appsv1.Deployment, instance *v1alpha1.HigressG
 	}
 
 	// resource
-	if !instance.Spec.Local && instance.Spec.Resources != nil {
+	if instance.Spec.Local && instance.Spec.Resources != nil {
 		deploy.Spec.Template.Spec.Containers[0].Resources = *instance.Spec.Resources
 	}
 
@@ -136,13 +135,11 @@ func genPorts(instance *v1alpha1.HigressGateway) []apiv1.ContainerPort {
 				Name:          "http",
 				Protocol:      "TCP",
 				ContainerPort: 80,
-				HostPort:      80,
 			},
 			{
 				Name:          "https",
 				Protocol:      "TCP",
 				ContainerPort: 443,
-				HostPort:      443,
 			},
 		}...)
 	}
@@ -359,7 +356,7 @@ func genVolumes(instance *v1alpha1.HigressGateway) []apiv1.Volume {
 		VolumeSource: apiv1.VolumeSource{
 			ConfigMap: &apiv1.ConfigMapVolumeSource{
 				LocalObjectReference: apiv1.LocalObjectReference{
-					Name: controller.HigressGatewayConfig,
+					Name: "cm-" + instance.Name,
 				},
 			},
 		},

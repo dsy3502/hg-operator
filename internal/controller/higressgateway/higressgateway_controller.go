@@ -292,7 +292,7 @@ func (r *HigressGatewayReconciler) setDefaultValues(instance *operatorv1alpha1.H
 	}
 	// serviceAccount
 	if instance.Spec.ServiceAccount == nil {
-		instance.Spec.ServiceAccount = &operatorv1alpha1.ServiceAccount{Enable: true, Name: "higress-gateway"}
+		instance.Spec.ServiceAccount = &operatorv1alpha1.ServiceAccount{Enable: true, Name: instance.Name}
 	}
 	// replicas
 	if instance.Spec.Replicas == nil {
@@ -302,8 +302,8 @@ func (r *HigressGatewayReconciler) setDefaultValues(instance *operatorv1alpha1.H
 	// selectorLabels
 	if len(instance.Spec.SelectorLabels) == 0 {
 		instance.Spec.SelectorLabels = map[string]string{
-			"app":     "higress-gateway",
-			"higress": "higress-system-higress-gateway",
+			"app":     instance.Name,
+			"higress": instance.Namespace + "-" + instance.Name,
 		}
 	}
 	// service

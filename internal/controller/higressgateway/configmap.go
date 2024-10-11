@@ -9,14 +9,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	operatorv1alpha1 "github.com/alibaba/higress/higress-operator/api/v1alpha1"
-	"github.com/alibaba/higress/higress-operator/internal/controller"
-	"github.com/alibaba/higress/higress-operator/internal/controller/higresscontroller"
 )
 
 func initGatewayConfigMap(cm *apiv1.ConfigMap, instance *operatorv1alpha1.HigressGateway) (*apiv1.ConfigMap, error) {
 	*cm = apiv1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      controller.HigressGatewayConfig,
+			Name:      "cm-" + instance.Name,
 			Namespace: instance.Namespace,
 			Labels:    instance.Labels,
 		},
@@ -65,13 +63,17 @@ func updateGatewayConfigMapSpec(cm *apiv1.ConfigMap, instance *operatorv1alpha1.
 
 	// defaultConfig.tracing
 	// defaultConfig.discoveryAddress
-	if instance.Spec.EnableHigressIstio {
-		instance.Spec.MeshConfig.DefaultConfig.DiscoveryAddress =
-			fmt.Sprintf("%s.%s.svc:15012", "istiod", instance.Namespace)
-	} else {
-		instance.Spec.MeshConfig.DefaultConfig.DiscoveryAddress =
-			fmt.Sprintf("%s.%s.svc:15012", higresscontroller.HigressControllerServiceName, instance.Namespace)
+	if instance.Spec.MeshConfig.DefaultConfig.DiscoveryAddress == "" {
+		if instance.Spec.EnableHigressIstio {
+			instance.Spec.MeshConfig.DefaultConfig.DiscoveryAddress =
+				fmt.Sprintf("%s.%s.svc:15012", "istiod", instance.Namespace)
+		} else {
+			instance.Spec.MeshConfig.DefaultConfig.DiscoveryAddress =
+				fmt.Sprintf("%s.%s.svc:15012", instance.Name, instance.Namespace)
+		}
+
 	}
+
 	if meshConfigBytes, err = yaml.Marshal(meshConfig); err == nil {
 		data["mesh"] = string(meshConfigBytes)
 	}
